@@ -120,7 +120,7 @@ class cpu (pyglet.window.Window):
       if extracted_op == 0:
         log("Clears the screen")
         self.display_buffer = [0]*64*32 # 64*32
-        self.should_draw = True
+        self.clear()
       elif extracted_op == 0x000e:
         log("Returns from subroutine")
         self.pc = self.stack.pop()
@@ -179,9 +179,9 @@ class cpu (pyglet.window.Window):
       elif extracted_op == 0x0005:
         log("VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't")
         if self.gpio[vy] > self.gpio[vx]:
-          self.gpio[0xf] = 1
-        else:
           self.gpio[0xf] = 0
+        else:
+          self.gpio[0xf] = 1
         self.gpio[vx] = self.gpio[vx] - self.gpio[vy]
         self.gpio[vx] &= 0xff
       elif extracted_op == 0x0006:
@@ -190,7 +190,7 @@ class cpu (pyglet.window.Window):
         self.gpio[vx] = self.gpio[vx] >> 1
       elif extracted_op == 0x0007:
         log("Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.")
-        if self.gpio[vx] > self.gpio[vy]:
+        if self.gpio[vy] > self.gpio[vx]:
           self.gpio[0xf] = 1
         else:
           self.gpio[0xf] = 0
@@ -204,7 +204,7 @@ class cpu (pyglet.window.Window):
     elif extracted_op == 0x9000:
       log("Skips the next instruction if VX doesn't equal VY.")
       if self.gpio[vx] != self.gpio[vy]:
-        self.pc += 2        
+        self.pc += 2
     elif extracted_op == 0xa000:
       log("Sets I to the address NNN.")
       self.index = self.opcode & 0x0fff
@@ -226,8 +226,8 @@ class cpu (pyglet.window.Window):
       # if any screen pixels are flipped from set to unset when the sprite
       # is drawn, and to 0 if that doesn't happen.
       self.gpio[0xf] = 0
-      x = self.gpio[vx]
-      y = self.gpio[vy]
+      x = self.gpio[vx] & 0xff
+      y = self.gpio[vy] & 0xff
       height = self.opcode & 0x000f
       row = 0
       while row < height:
@@ -268,6 +268,8 @@ class cpu (pyglet.window.Window):
         ret = self.get_key()
         if ret >= 0:
           self.gpio[vx] = ret
+        else:
+          self.pc -= 2
       elif extracted_op == 0x0015:
         log("Sets the delay timer to VX.")
         self.delay_timer = self.gpio[vx]
@@ -286,7 +288,7 @@ class cpu (pyglet.window.Window):
         log("Set index to point to a character")
         # Sets I to the location of the sprite for the character in VX.
         # Characters 0-F (in hexadecimal) are represented by a 4x5 font.
-        self.index = 5*(self.gpio[vx])
+        self.index = (5*(self.gpio[vx])) & 0xfff
       elif extracted_op == 0x0033:
         log("Store a number as BCD")
         # Stores the Binary-coded decimal representation of VX, with the
@@ -343,7 +345,6 @@ class cpu (pyglet.window.Window):
       if self.key_inputs[i] == 1:
         return i
       i += 1
-    self.pc -= 2
     return -1
     
   def on_key_press(self, symbol, modifiers):
@@ -373,7 +374,7 @@ class cpu (pyglet.window.Window):
       self.cycle()
       self.draw()
       self.flip()
-      
+
 
 # begin emulating!
 if len(sys.argv) == 3:
