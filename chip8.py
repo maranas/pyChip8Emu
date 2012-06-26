@@ -11,22 +11,22 @@ import time
 
 from pyglet.sprite import Sprite
 
-KEY_MAP = {pyglet.window.key._1: 0,
-           pyglet.window.key._2: 1,
-           pyglet.window.key._3: 2,
-           pyglet.window.key._4: 3,
-           pyglet.window.key.Q: 4,
-           pyglet.window.key.W: 5,
-           pyglet.window.key.E: 6,
-           pyglet.window.key.R: 7,
-           pyglet.window.key.A: 8,
-           pyglet.window.key.S: 9,
-           pyglet.window.key.D: 10,
-           pyglet.window.key.F: 11,
-           pyglet.window.key.Z: 12,
-           pyglet.window.key.X: 13,
-           pyglet.window.key.C: 14,
-           pyglet.window.key.V: 15
+KEY_MAP = {pyglet.window.key._1: 0x1,
+           pyglet.window.key._2: 0x2,
+           pyglet.window.key._3: 0x3,
+           pyglet.window.key._4: 0xc,
+           pyglet.window.key.Q: 0x4,
+           pyglet.window.key.W: 0x5,
+           pyglet.window.key.E: 0x6,
+           pyglet.window.key.R: 0xd,
+           pyglet.window.key.A: 0x7,
+           pyglet.window.key.S: 0x8,
+           pyglet.window.key.D: 0x9,
+           pyglet.window.key.F: 0xe,
+           pyglet.window.key.Z: 0xa,
+           pyglet.window.key.X: 0,
+           pyglet.window.key.C: 0xb,
+           pyglet.window.key.V: 0xf
           }
 
 LOGGING = False
@@ -70,6 +70,7 @@ class cpu (pyglet.window.Window):
   key_wait = False
   
   pixel = pyglet.image.load('pixel.png') # pseudo-pixelwise drawing
+  texture = None
   
   def __init__(self, *args, **kwargs):
     super(cpu, self).__init__(*args, **kwargs)
@@ -107,6 +108,7 @@ class cpu (pyglet.window.Window):
   def cycle(self):
     # 1. get op (op code plus operand)
     self.opcode = (self.memory[self.pc] << 8) | self.memory[self.pc + 1]
+    log("Current opcode: %X" % self.opcode)
     self.pc += 2
     vx = (self.opcode & 0x0f00) >> 8
     vy = (self.opcode & 0x00f0) >> 4
@@ -118,7 +120,7 @@ class cpu (pyglet.window.Window):
       if extracted_op == 0:
         log("Clears the screen")
         self.display_buffer = [0]*64*32 # 64*32
-        self.clear()
+        self.should_draw = True
       elif extracted_op == 0x000e:
         log("Returns from subroutine")
         self.pc = self.stack.pop()
@@ -146,21 +148,26 @@ class cpu (pyglet.window.Window):
       self.gpio[vx] = self.opcode & 0x00ff
     elif extracted_op == 0x7000:
       log("Adds NN to VX.")
-      self.gpio[vx] += self.opcode & 0x00ff
+      self.gpio[vx] += self.opcode
+      self.gpio[vx] &= 0xff
     elif extracted_op == 0x8000:
       extracted_op = extracted_op & 0x000f
       if extracted_op == 0x0000:
         log("Sets VX to the value of VY.")
         self.gpio[vx] = self.gpio[vy]
+        self.gpio[vx] &= 0xff
       elif extracted_op == 0x0001:
         log("Sets VX to VX or VY.")
         self.gpio[vx] |= self.gpio[vy]
+        self.gpio[vx] &= 0xff
       elif extracted_op == 0x0002:
         log("Sets VX to VX and VY.")
         self.gpio[vx] &= self.gpio[vy]
+        self.gpio[vx] &= 0xff
       elif extracted_op == 0x0003:
         log("Sets VX to VX xor VY.")
         self.gpio[vx] ^= self.gpio[vy]
+        self.gpio[vx] &= 0xff
       elif extracted_op == 0x0004:
         log("Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.")
         if self.gpio[vx] + self.gpio[vy] > 0xff:
@@ -193,6 +200,7 @@ class cpu (pyglet.window.Window):
         log("Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift.")
         self.gpio[0xf] = (self.gpio[vx] & 0x00f0) >> 7
         self.gpio[vx] = self.gpio[vx] << 1
+        self.gpio[vx] &= 0xff
     elif extracted_op == 0x9000:
       log("Skips the next instruction if VX doesn't equal VY.")
       if self.gpio[vx] != self.gpio[vy]:
@@ -207,6 +215,7 @@ class cpu (pyglet.window.Window):
       log("Sets VX to a random number and NN.")
       r = int(random.random() * 0xff)
       self.gpio[vx] = r & (self.opcode & 0x00ff)
+      self.gpio[vx] &= 0xff
     elif extracted_op == 0xd000:
       log("Draw a sprite")
       # Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels
@@ -242,13 +251,11 @@ class cpu (pyglet.window.Window):
       if extracted_op == 0x000e:
         log("Skips the next instruction if the key stored in VX is pressed.")
         key = self.gpio[vx] & 0xf
-        log("%X" % key)
         if self.key_inputs[key] == 1:
           self.pc += 2
       elif extracted_op == 0x0001:
         log("Skips the next instruction if the key stored in VX isn't pressed.")
         key = self.gpio[vx] & 0xf
-        log("%X" % key)
         if self.key_inputs[key] == 0:
           self.pc += 2
     elif extracted_op == 0xf000:
@@ -307,24 +314,29 @@ class cpu (pyglet.window.Window):
     if self.sound_timer > 0:
       self.sound_timer -= 1
       if self.sound_timer == 0:
-        log("Play a sound.")
-    
+        self.buzz()
+
   def draw(self):
     if self.should_draw:
       # draw
-      batch = pyglet.graphics.Batch()
       self.clear()
       line_counter = 0
       i = 0
-      drawn = []
+      self.texture = pyglet.image.Texture.create(64, 32)
       while i < 2048:
         if self.display_buffer[i] == 1:
           # draw a square pixel
-          drawn.append(Sprite(self.pixel, (i%64) * 10, 310-((i/64) * 10), batch=batch))
+          self.texture.blit_into(self.pixel, i%64, 31-(i/64), 0)
         i += 1
-      batch.draw()
+      pyglet.gl.glTexParameteri(pyglet.gl.GL_TEXTURE_2D, pyglet.gl.GL_TEXTURE_MAG_FILTER, pyglet.gl.GL_NEAREST)
+      self.texture.width = self.width
+      self.texture.height = self.height
+      self.texture.blit(0,0)
       self.should_draw = False
       
+  def buzz(self):
+    log("Play a sound.")
+
   def get_key(self):
     i = 0
     while i < 16:
