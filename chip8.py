@@ -78,7 +78,10 @@ class cpu (pyglet.window.Window):
   
   def _0ZZZ(self):
     extracted_op = self.opcode & 0xf0ff
-    self.funcmap[extracted_op]()
+    try:
+      self.funcmap[extracted_op]()
+    except:
+      print "Unknown instruction: %X" % self.opcode
     
   def _0ZZ0(self):
     log("Clears the screen")
@@ -124,7 +127,10 @@ class cpu (pyglet.window.Window):
   def _8ZZZ(self):
     extracted_op = self.opcode & 0xf00f
     extracted_op += 0xff0
-    self.funcmap[extracted_op]()
+    try:
+      self.funcmap[extracted_op]()
+    except:
+      print "Unknown instruction: %X" % self.opcode
     
   def _8ZZ0(self):
     log("Sets VX to the value of VY.")
@@ -171,10 +177,10 @@ class cpu (pyglet.window.Window):
     
   def _8ZZ7(self):
     log("Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.")
-    if self.gpio[self.vy] > self.gpio[self.vx]:
-      self.gpio[0xf] = 1
-    else:
+    if self.gpio[self.vx] > self.gpio[self.vy]:
       self.gpio[0xf] = 0
+    else:
+      self.gpio[0xf] = 1
     self.gpio[self.vx] = self.gpio[self.vy] - self.gpio[self.vx]
     self.gpio[self.vx] &= 0xff
     
@@ -238,7 +244,10 @@ class cpu (pyglet.window.Window):
     
   def _EZZZ(self):
     extracted_op = self.opcode & 0xf00f
-    self.funcmap[extracted_op]()
+    try:
+      self.funcmap[extracted_op]()
+    except:
+      print "Unknown instruction: %X" % self.opcode
     
   def _EZZE(self):
     log("Skips the next instruction if the key stored in VX is pressed.")
@@ -254,7 +263,10 @@ class cpu (pyglet.window.Window):
         
   def _FZZZ(self):
     extracted_op = self.opcode & 0xf0ff
-    self.funcmap[extracted_op]()
+    try:
+      self.funcmap[extracted_op]()
+    except:
+      print "Unknown instruction: %X" % self.opcode
     
   def _FZ07(self):
     log("Sets VX to the value of the delay timer.")
@@ -399,7 +411,10 @@ class cpu (pyglet.window.Window):
 
     # 2. check ops, lookup and execute
     extracted_op = self.opcode & 0xf000
-    self.funcmap[extracted_op]()
+    try:
+      self.funcmap[extracted_op]()
+    except:
+      print "Unknown instruction: %X" % self.opcode
     
     if self.delay_timer > 0:
       self.delay_timer -= 1
