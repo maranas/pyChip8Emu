@@ -28,7 +28,7 @@ KEY_MAP = {pyglet.window.key._1: 0x1,
            pyglet.window.key.C: 0xb,
            pyglet.window.key.V: 0xf
           }
-
+          
 LOGGING = False
           
 def log(msg):
@@ -69,11 +69,295 @@ class cpu (pyglet.window.Window):
   should_draw = False
   key_wait = False
   
-  pixel = pyglet.image.load('pixel.png') # pseudo-pixelwise drawing
-  texture = None
+  pixel = pyglet.image.load('pixel.png') # pseudo-pixelwise drawing with 10x10 boxes
+  
+  # instruction functions
+  funcmap = None # store op <-> method mappings here
+  vx = 0 # store register numbers here for op method access
+  vy = 0
+  
+  def _0ZZZ(self):
+    extracted_op = self.opcode & 0xf0ff
+    self.funcmap[extracted_op]()
+    
+  def _0ZZ0(self):
+    log("Clears the screen")
+    self.display_buffer = [0]*64*32 # 64*32
+    self.should_draw = True
+    
+  def _0ZZE(self):
+    log("Returns from subroutine")
+    self.pc = self.stack.pop()
+      
+  def _1ZZZ(self):
+    log("Jumps to address NNN.")
+    self.pc = self.opcode & 0x0fff
+    
+  def _2ZZZ(self):
+    log("Calls subroutine at NNN.")
+    self.stack.append(self.pc)
+    self.pc = self.opcode & 0x0fff
+      
+  def _3ZZZ(self):
+    log("Skips the next instruction if VX equals NN.")
+    if self.gpio[self.vx] == (self.opcode & 0x00ff):
+      self.pc += 2
+      
+  def _4ZZZ(self):
+    log("Skips the next instruction if VX doesn't equal NN.")
+    if self.gpio[self.vx] != (self.opcode & 0x00ff):
+      self.pc += 2
+      
+  def _5ZZZ(self):
+    log("Skips the next instruction if VX equals VY.")
+    if self.gpio[self.vx] == self.gpio[self.vy]:
+      self.pc += 2
+      
+  def _6ZZZ(self):
+    log("Sets VX to NN.")
+    self.gpio[self.vx] = self.opcode & 0x00ff
+    
+  def _7ZZZ(self):
+    log("Adds NN to VX.")
+    self.gpio[self.vx] += (self.opcode & 0xff)
+    
+  def _8ZZZ(self):
+    extracted_op = self.opcode & 0xf00f
+    extracted_op += 0xff0
+    self.funcmap[extracted_op]()
+    
+  def _8ZZ0(self):
+    log("Sets VX to the value of VY.")
+    self.gpio[self.vx] = self.gpio[self.vy]
+    self.gpio[self.vx] &= 0xff
+  
+  def _8ZZ1(self):  
+    log("Sets VX to VX or VY.")
+    self.gpio[self.vx] |= self.gpio[self.vy]
+    self.gpio[self.vx] &= 0xff
+    
+  def _8ZZ2(self):
+    log("Sets VX to VX and VY.")
+    self.gpio[self.vx] &= self.gpio[self.vy]
+    self.gpio[self.vx] &= 0xff
+    
+  def _8ZZ3(self):
+    log("Sets VX to VX xor VY.")
+    self.gpio[self.vx] ^= self.gpio[self.vy]
+    self.gpio[self.vx] &= 0xff
+    
+  def _8ZZ4(self):
+    log("Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.")
+    if self.gpio[self.vx] + self.gpio[self.vy] > 0xff:
+      self.gpio[0xf] = 1
+    else:
+      self.gpio[0xf] = 0
+    self.gpio[self.vx] += self.gpio[self.vy]
+    self.gpio[self.vx] &= 0xff
+    
+  def _8ZZ5(self):
+    log("VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't")
+    if self.gpio[self.vy] > self.gpio[self.vx]:
+      self.gpio[0xf] = 0
+    else:
+      self.gpio[0xf] = 1
+    self.gpio[self.vx] = self.gpio[self.vx] - self.gpio[self.vy]
+    self.gpio[self.vx] &= 0xff
+    
+  def _8ZZ6(self):
+    log("Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift.")
+    self.gpio[0xf] = self.gpio[self.vx] & 0x0001
+    self.gpio[self.vx] = self.gpio[self.vx] >> 1
+    
+  def _8ZZ7(self):
+    log("Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.")
+    if self.gpio[self.vy] > self.gpio[self.vx]:
+      self.gpio[0xf] = 1
+    else:
+      self.gpio[0xf] = 0
+    self.gpio[self.vx] = self.gpio[self.vy] - self.gpio[self.vx]
+    self.gpio[self.vx] &= 0xff
+    
+  def _8ZZE(self):
+    log("Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift.")
+    self.gpio[0xf] = (self.gpio[self.vx] & 0x00f0) >> 7
+    self.gpio[self.vx] = self.gpio[self.vx] << 1
+    self.gpio[self.vx] &= 0xff
+      
+  def _9ZZZ(self):
+    log("Skips the next instruction if VX doesn't equal VY.")
+    if self.gpio[self.vx] != self.gpio[self.vy]:
+      self.pc += 2
+      
+  def _AZZZ(self):
+    log("Sets I to the address NNN.")
+    self.index = self.opcode & 0x0fff
+    
+  def _BZZZ(self):
+    log("Jumps to the address NNN plus V0.")
+    self.pc = (self.opcode & 0x0fff) + self.gpio[0]
+    
+  def _CZZZ(self):
+    log("Sets VX to a random number and NN.")
+    r = int(random.random() * 0xff)
+    self.gpio[self.vx] = r & (self.opcode & 0x00ff)
+    self.gpio[self.vx] &= 0xff
+    
+  def _DZZZ(self):
+    log("Draw a sprite")
+    # Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels
+    # and a height of N pixels. Each row of 8 pixels is read as bit-coded
+    # (with the most significant bit of each byte displayed on the left)
+    # starting from memory location I; I value doesn't change after the
+    # execution of this instruction. As described above, VF is set to 1
+    # if any screen pixels are flipped from set to unset when the sprite
+    # is drawn, and to 0 if that doesn't happen.
+    self.gpio[0xf] = 0
+    x = self.gpio[self.vx] & 0xff
+    y = self.gpio[self.vy] & 0xff
+    height = self.opcode & 0x000f
+    row = 0
+    while row < height:
+      curr_row = self.memory[row + self.index]
+      pixel_offset = 0
+      while pixel_offset < 8:
+        loc = x + pixel_offset + ((y + row) * 64)
+        pixel_offset += 1
+        if (y + row) >= 32 or (x + pixel_offset - 1) >= 64:
+          # ignore pixels outside the screen
+          continue
+        mask = 1 << 8-pixel_offset
+        curr_pixel = (curr_row & mask) >> (8-pixel_offset)
+        self.display_buffer[loc] ^= curr_pixel
+        if self.display_buffer[loc] == 0:
+          self.gpio[0xf] = 1
+        else:
+          self.gpio[0xf] = 0
+      row += 1
+    self.should_draw = True
+    
+  def _EZZZ(self):
+    extracted_op = self.opcode & 0xf00f
+    self.funcmap[extracted_op]()
+    
+  def _EZZE(self):
+    log("Skips the next instruction if the key stored in VX is pressed.")
+    key = self.gpio[self.vx] & 0xf
+    if self.key_inputs[key] == 1:
+      self.pc += 2
+      
+  def _EZZ1(self):
+    log("Skips the next instruction if the key stored in VX isn't pressed.")
+    key = self.gpio[self.vx] & 0xf
+    if self.key_inputs[key] == 0:
+      self.pc += 2
+        
+  def _FZZZ(self):
+    extracted_op = self.opcode & 0xf0ff
+    self.funcmap[extracted_op]()
+    
+  def _FZ07(self):
+    log("Sets VX to the value of the delay timer.")
+    self.gpio[self.vx] = self.delay_timer
+    
+  def _FZ0A(self):
+    log("A key press is awaited, and then stored in VX.")
+    ret = self.get_key()
+    if ret >= 0:
+      self.gpio[self.vx] = ret
+    else:
+      self.pc -= 2
+      
+  def _FZ15(self):
+    log("Sets the delay timer to VX.")
+    self.delay_timer = self.gpio[self.vx]
+    
+  def _FZ18(self):
+    log("Sets the sound timer to VX.")
+    self.sound_timer = self.gpio[self.vx]
+    
+  def _FZ1E(self):
+    log("Adds VX to I. if overflow, vf = 1")
+    self.index += self.gpio[self.vx]
+    if self.index > 0xfff:
+      self.gpio[0xf] = 1
+      self.index &= 0xfff
+    else:
+      self.gpio[0xf] = 0
+      
+  def _FZ29(self):
+    log("Set index to point to a character")
+    # Sets I to the location of the sprite for the character in VX.
+    # Characters 0-F (in hexadecimal) are represented by a 4x5 font.
+    self.index = (5*(self.gpio[self.vx])) & 0xfff
+    
+  def _FZ33(self):
+    log("Store a number as BCD")
+    # Stores the Binary-coded decimal representation of VX, with the
+    # most significant of three digits at the address in I, the middle
+    # digit at I plus 1, and the least significant digit at I plus 2.
+    self.memory[self.index]   = self.gpio[self.vx] / 100
+    self.memory[self.index+1] = (self.gpio[self.vx] % 100) / 10
+    self.memory[self.index+2] = self.gpio[self.vx] % 10
+    
+  def _FZ55(self):
+    log("Stores V0 to VX in memory starting at address I.")
+    i = 0
+    while i < 0xf:
+      self.memory[self.index + i] = self.gpio[i]
+      i += 1
+    self.index += (self.vx) + 1
+    
+  def _FZ65(self):
+    log("Fills V0 to VX with values from memory starting at address I.")
+    i = 0
+    while i < 0xf:
+      self.gpio[i] = self.memory[self.index + i]
+      i += 1
+    self.index += (self.vx) + 1
+  # end instructions
   
   def __init__(self, *args, **kwargs):
     super(cpu, self).__init__(*args, **kwargs)
+    self.funcmap = {0x0000: self._0ZZZ,
+                    0x00e0: self._0ZZ0,
+                    0x00ee: self._0ZZE,
+                    0x1000: self._1ZZZ,
+                    0x2000: self._2ZZZ,
+                    0x3000: self._3ZZZ,
+                    0x4000: self._4ZZZ,
+                    0x5000: self._5ZZZ,
+                    0x6000: self._6ZZZ,
+                    0x7000: self._7ZZZ,
+                    0x8000: self._8ZZZ,
+                    0x8FF0: self._8ZZ0,
+                    0x8FF1: self._8ZZ1,
+                    0x8FF2: self._8ZZ2,
+                    0x8FF3: self._8ZZ3,
+                    0x8FF4: self._8ZZ4,
+                    0x8FF5: self._8ZZ5,
+                    0x8FF6: self._8ZZ6,
+                    0x8FF7: self._8ZZ7,
+                    0x8FFE: self._8ZZE,
+                    0x9000: self._9ZZZ,
+                    0xA000: self._AZZZ,
+                    0xB000: self._BZZZ,
+                    0xC000: self._CZZZ,
+                    0xD000: self._DZZZ,
+                    0xE000: self._EZZZ,
+                    0xE00E: self._EZZE,
+                    0xE001: self._EZZ1,
+                    0xF000: self._FZZZ,
+                    0xF007: self._FZ07,
+                    0xF00A: self._FZ0A,
+                    0xF015: self._FZ15,
+                    0xF018: self._FZ18,
+                    0xF01E: self._FZ1E,
+                    0xF029: self._FZ29,
+                    0xF033: self._FZ33,
+                    0xF055: self._FZ55,
+                    0xF065: self._FZ65
+                    }
   
   def load_rom(self, rom_path):
     log("Loading %s..." % rom_path)
@@ -110,207 +394,13 @@ class cpu (pyglet.window.Window):
     self.opcode = (self.memory[self.pc] << 8) | self.memory[self.pc + 1]
     log("Current opcode: %X" % self.opcode)
     self.pc += 2
-    vx = (self.opcode & 0x0f00) >> 8
-    vy = (self.opcode & 0x00f0) >> 4
+    self.vx = (self.opcode & 0x0f00) >> 8
+    self.vy = (self.opcode & 0x00f0) >> 4
 
-    # 2. check ops
+    # 2. check ops, lookup and execute
     extracted_op = self.opcode & 0xf000
-    if extracted_op == 0:
-      extracted_op = self.opcode & 0x000f
-      if extracted_op == 0:
-        log("Clears the screen")
-        self.display_buffer = [0]*64*32 # 64*32
-        self.clear()
-      elif extracted_op == 0x000e:
-        log("Returns from subroutine")
-        self.pc = self.stack.pop()
-    elif extracted_op == 0x1000:
-      log("Jumps to address NNN.")
-      self.pc = self.opcode & 0x0fff
-    elif extracted_op == 0x2000:
-      log("Calls subroutine at NNN.")
-      self.stack.append(self.pc)
-      self.pc = self.opcode & 0x0fff
-    elif extracted_op == 0x3000:
-      log("Skips the next instruction if VX equals NN.")
-      if self.gpio[vx] == (self.opcode & 0x00ff):
-        self.pc += 2
-    elif extracted_op == 0x4000:
-      log("Skips the next instruction if VX doesn't equal NN.")
-      if self.gpio[vx] != (self.opcode & 0x00ff):
-        self.pc += 2
-    elif extracted_op == 0x5000:
-      log("Skips the next instruction if VX equals VY.")
-      if self.gpio[vx] == self.gpio[vy]:
-        self.pc += 2
-    elif extracted_op == 0x6000:
-      log("Sets VX to NN.")
-      self.gpio[vx] = self.opcode & 0x00ff
-    elif extracted_op == 0x7000:
-      log("Adds NN to VX.")
-      self.gpio[vx] += (self.opcode & 0xff)
-    elif extracted_op == 0x8000:
-      extracted_op = extracted_op & 0x000f
-      if extracted_op == 0x0000:
-        log("Sets VX to the value of VY.")
-        self.gpio[vx] = self.gpio[vy]
-        self.gpio[vx] &= 0xff
-      elif extracted_op == 0x0001:
-        log("Sets VX to VX or VY.")
-        self.gpio[vx] |= self.gpio[vy]
-        self.gpio[vx] &= 0xff
-      elif extracted_op == 0x0002:
-        log("Sets VX to VX and VY.")
-        self.gpio[vx] &= self.gpio[vy]
-        self.gpio[vx] &= 0xff
-      elif extracted_op == 0x0003:
-        log("Sets VX to VX xor VY.")
-        self.gpio[vx] ^= self.gpio[vy]
-        self.gpio[vx] &= 0xff
-      elif extracted_op == 0x0004:
-        log("Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.")
-        if self.gpio[vx] + self.gpio[vy] > 0xff:
-          self.gpio[0xf] = 1
-        else:
-          self.gpio[0xf] = 0
-        self.gpio[vx] += self.gpio[vy]
-        self.gpio[vx] &= 0xff
-      elif extracted_op == 0x0005:
-        log("VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't")
-        if self.gpio[vy] > self.gpio[vx]:
-          self.gpio[0xf] = 0
-        else:
-          self.gpio[0xf] = 1
-        self.gpio[vx] = self.gpio[vx] - self.gpio[vy]
-        self.gpio[vx] &= 0xff
-      elif extracted_op == 0x0006:
-        log("Shifts VX right by one. VF is set to the value of the least significant bit of VX before the shift.")
-        self.gpio[0xf] = self.gpio[vx] & 0x0001
-        self.gpio[vx] = self.gpio[vx] >> 1
-      elif extracted_op == 0x0007:
-        log("Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.")
-        if self.gpio[vy] > self.gpio[vx]:
-          self.gpio[0xf] = 1
-        else:
-          self.gpio[0xf] = 0
-        self.gpio[vx] = self.gpio[vy] - self.gpio[vx]
-        self.gpio[vx] &= 0xff
-      elif extracted_op == 0x000e:
-        log("Shifts VX left by one. VF is set to the value of the most significant bit of VX before the shift.")
-        self.gpio[0xf] = (self.gpio[vx] & 0x00f0) >> 7
-        self.gpio[vx] = self.gpio[vx] << 1
-        self.gpio[vx] &= 0xff
-    elif extracted_op == 0x9000:
-      log("Skips the next instruction if VX doesn't equal VY.")
-      if self.gpio[vx] != self.gpio[vy]:
-        self.pc += 2
-    elif extracted_op == 0xa000:
-      log("Sets I to the address NNN.")
-      self.index = self.opcode & 0x0fff
-    elif extracted_op == 0xb000:
-      log("Jumps to the address NNN plus V0.")
-      self.pc = (self.opcode & 0x0fff) + self.gpio[0]
-    elif extracted_op == 0xc000:
-      log("Sets VX to a random number and NN.")
-      r = int(random.random() * 0xff)
-      self.gpio[vx] = r & (self.opcode & 0x00ff)
-      self.gpio[vx] &= 0xff
-    elif extracted_op == 0xd000:
-      log("Draw a sprite")
-      # Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels
-      # and a height of N pixels. Each row of 8 pixels is read as bit-coded
-      # (with the most significant bit of each byte displayed on the left)
-      # starting from memory location I; I value doesn't change after the
-      # execution of this instruction. As described above, VF is set to 1
-      # if any screen pixels are flipped from set to unset when the sprite
-      # is drawn, and to 0 if that doesn't happen.
-      self.gpio[0xf] = 0
-      x = self.gpio[vx] & 0xff
-      y = self.gpio[vy] & 0xff
-      height = self.opcode & 0x000f
-      row = 0
-      while row < height:
-        curr_row = self.memory[row + self.index]
-        pixel_offset = 0
-        while pixel_offset < 8:
-          loc = x + pixel_offset + ((y + row) * 64)
-          pixel_offset += 1
-          if (y + row) >= 32 or (x + pixel_offset - 1) >= 64:
-            # ignore pixels outside the screen
-            continue
-          mask = 1 << 8-pixel_offset
-          curr_pixel = (curr_row & mask) >> (8-pixel_offset)
-          if self.display_buffer[loc] ^ curr_pixel == 1:
-            self.gpio[0xf] = 1
-          self.display_buffer[loc] = curr_pixel
-        row += 1
-      self.should_draw = True
-    elif extracted_op == 0xe000:
-      extracted_op = self.opcode & 0x000f
-      if extracted_op == 0x000e:
-        log("Skips the next instruction if the key stored in VX is pressed.")
-        key = self.gpio[vx] & 0xf
-        if self.key_inputs[key] == 1:
-          self.pc += 2
-      elif extracted_op == 0x0001:
-        log("Skips the next instruction if the key stored in VX isn't pressed.")
-        key = self.gpio[vx] & 0xf
-        if self.key_inputs[key] == 0:
-          self.pc += 2
-    elif extracted_op == 0xf000:
-      extracted_op = self.opcode & 0x00ff
-      if extracted_op == 0x0007:
-        log("Sets VX to the value of the delay timer.")
-        self.gpio[vx] = self.delay_timer
-      elif extracted_op == 0x000a:
-        log("A key press is awaited, and then stored in VX.")
-        ret = self.get_key()
-        if ret >= 0:
-          self.gpio[vx] = ret
-        else:
-          self.pc -= 2
-      elif extracted_op == 0x0015:
-        log("Sets the delay timer to VX.")
-        self.delay_timer = self.gpio[vx]
-      elif extracted_op == 0x0018:
-        log("Sets the sound timer to VX.")
-        self.sound_timer = self.gpio[vx]
-      elif extracted_op == 0x001e:
-        log("Adds VX to I. if overflow, vf = 1")
-        self.index += self.gpio[vx]
-        if self.index > 0xfff:
-          self.gpio[0xf] = 1
-          self.index &= 0xfff
-        else:
-          self.gpio[0xf] = 0
-      elif extracted_op == 0x0029:
-        log("Set index to point to a character")
-        # Sets I to the location of the sprite for the character in VX.
-        # Characters 0-F (in hexadecimal) are represented by a 4x5 font.
-        self.index = (5*(self.gpio[vx])) & 0xfff
-      elif extracted_op == 0x0033:
-        log("Store a number as BCD")
-        # Stores the Binary-coded decimal representation of VX, with the
-        # most significant of three digits at the address in I, the middle
-        # digit at I plus 1, and the least significant digit at I plus 2.
-        self.memory[self.index]   = self.gpio[vx] / 100
-        self.memory[self.index+1] = (self.gpio[vx] % 100) / 10
-        self.memory[self.index+2] = self.gpio[vx] % 10
-      elif extracted_op == 0x0055:
-        log("Stores V0 to VX in memory starting at address I.")
-        i = 0
-        while i < 0xf:
-          self.memory[self.index + i] = self.gpio[i]
-          i += 1
-        self.index += (vx) + 1
-      elif extracted_op == 0x0065:
-        log("Fills V0 to VX with values from memory starting at address I.")
-        i = 0
-        while i < 0xf:
-          self.gpio[i] = self.memory[self.index + i]
-          i += 1
-        self.index += (vx) + 1
-
+    self.funcmap[extracted_op]()
+    
     if self.delay_timer > 0:
       self.delay_timer -= 1
     if self.sound_timer > 0:
@@ -324,16 +414,12 @@ class cpu (pyglet.window.Window):
       self.clear()
       line_counter = 0
       i = 0
-      self.texture = pyglet.image.Texture.create(64, 32)
       while i < 2048:
         if self.display_buffer[i] == 1:
           # draw a square pixel
-          self.texture.blit_into(self.pixel, i%64, 31-(i/64), 0)
+          self.pixel.blit((i%64)*10, 310 - ((i/64)*10))
         i += 1
-      pyglet.gl.glTexParameteri(pyglet.gl.GL_TEXTURE_2D, pyglet.gl.GL_TEXTURE_MAG_FILTER, pyglet.gl.GL_NEAREST)
-      self.texture.width = self.width
-      self.texture.height = self.height
-      self.texture.blit(0,0)
+      self.flip()
       self.should_draw = False
       
   def buzz(self):
@@ -373,13 +459,13 @@ class cpu (pyglet.window.Window):
       self.dispatch_events()    
       self.cycle()
       self.draw()
-      self.flip()
 
 
 # begin emulating!
 if len(sys.argv) == 3:
   if sys.argv[2] == "log":
-    LOGGING = True  
+    LOGGING = True
+      
 chip8emu = cpu(640, 320)
 chip8emu.main()
 log("... done.")
