@@ -303,7 +303,7 @@ class cpu (pyglet.window.Window):
   def _FZ55(self):
     log("Stores V0 to VX in memory starting at address I.")
     i = 0
-    while i < 0xf:
+    while i <= self.vx:
       self.memory[self.index + i] = self.gpio[i]
       i += 1
     self.index += (self.vx) + 1
@@ -311,7 +311,7 @@ class cpu (pyglet.window.Window):
   def _FZ65(self):
     log("Fills V0 to VX with values from memory starting at address I.")
     i = 0
-    while i < 0xf:
+    while i <= self.vx:
       self.gpio[i] = self.memory[self.index + i]
       i += 1
     self.index += (self.vx) + 1
