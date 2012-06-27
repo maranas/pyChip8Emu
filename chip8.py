@@ -141,15 +141,14 @@ class cpu (pyglet.window.Window):
         self.pc += 2
     elif extracted_op == 0x5000:
       log("Skips the next instruction if VX equals VY.")
-      if self.gpio[vx] == self.gpio[vy] & 0xff:
+      if self.gpio[vx] == self.gpio[vy]:
         self.pc += 2
     elif extracted_op == 0x6000:
       log("Sets VX to NN.")
       self.gpio[vx] = self.opcode & 0x00ff
     elif extracted_op == 0x7000:
       log("Adds NN to VX.")
-      self.gpio[vx] += self.opcode
-      self.gpio[vx] &= 0xff
+      self.gpio[vx] += (self.opcode & 0xff)
     elif extracted_op == 0x8000:
       extracted_op = extracted_op & 0x000f
       if extracted_op == 0x0000:
@@ -294,9 +293,9 @@ class cpu (pyglet.window.Window):
         # Stores the Binary-coded decimal representation of VX, with the
         # most significant of three digits at the address in I, the middle
         # digit at I plus 1, and the least significant digit at I plus 2.
-        self.memory[self.index]   = (self.gpio[vx] & 0xf00) >> 8
-        self.memory[self.index+1] = (self.gpio[vx] & 0x0f0) >> 4
-        self.memory[self.index+2] = (self.gpio[vx] & 0x00f)
+        self.memory[self.index]   = self.gpio[vx] / 100
+        self.memory[self.index+1] = (self.gpio[vx] % 100) / 10
+        self.memory[self.index+2] = self.gpio[vx] % 10
       elif extracted_op == 0x0055:
         log("Stores V0 to VX in memory starting at address I.")
         i = 0
@@ -311,6 +310,7 @@ class cpu (pyglet.window.Window):
           self.gpio[i] = self.memory[self.index + i]
           i += 1
         self.index += (vx) + 1
+
     if self.delay_timer > 0:
       self.delay_timer -= 1
     if self.sound_timer > 0:
