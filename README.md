@@ -2,21 +2,18 @@ pyChip8Emu
 ==========
 
 Chip 8 interpreter in Python
+Uses pyglet for input/output, so should work with any platform that can run Python.
 
-Uses pyglet for input/output
+>Usage:
+>  python chip8.py <path to chip8 rom> <log>
+>  where: <path to chip8 rom> - path to Chip8 rom
+>       : <log> - if present, prints log messages to console"
 
-Usage:
-  python chip8.py <path to chip8 rom> <log>
-  where: <path to chip8 rom> - path to Chip8 rom
-       : <log> - if present, prints log messages to console"
+![Playing PONG2](http://i.imgur.com/A5KeV.png "Title")
        
 For Chip 8 games to test with, go to http://www.zophar.net/pdroms/chip8/chip-8-games-pack.html
 
-
 Opcodes taken from http://en.wikipedia.org/wiki/CHIP-8#Opcode_table
-
-To support other platforms, implement the graphics, sound and input classes
-in the respective platforms
 
 Copyright (c) 2012 Moises Anthony Aranas
 

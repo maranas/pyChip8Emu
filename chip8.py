@@ -70,6 +70,7 @@ class cpu (pyglet.window.Window):
   key_wait = False
   
   pixel = pyglet.image.load('pixel.png') # pseudo-pixelwise drawing with 10x10 boxes
+  buzz = pyglet.resource.media('buzz.wav', streaming=False)
   
   # instruction functions
   funcmap = None # store op <-> method mappings here
@@ -421,7 +422,7 @@ class cpu (pyglet.window.Window):
     if self.sound_timer > 0:
       self.sound_timer -= 1
       if self.sound_timer == 0:
-        self.buzz()
+        self.buzz.play()
 
   def draw(self):
     if self.should_draw:
@@ -436,9 +437,6 @@ class cpu (pyglet.window.Window):
         i += 1
       self.flip()
       self.should_draw = False
-      
-  def buzz(self):
-    log("Play a sound.")
 
   def get_key(self):
     i = 0
