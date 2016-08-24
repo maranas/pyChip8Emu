@@ -69,8 +69,14 @@ class cpu (pyglet.window.Window):
   should_draw = False
   key_wait = False
   
-  pixel = pyglet.image.load('pixel.png') # pseudo-pixelwise drawing with 10x10 boxes
+  pixel = pyglet.resource.image('pixel.png') # pseudo-pixelwise drawing with 10x10 boxes
   buzz = pyglet.resource.media('buzz.wav', streaming=False)
+
+  # "pixel" buffer
+  batch = pyglet.graphics.Batch()
+  sprites = []
+  for i in range(0,2048):
+    sprites.append(pyglet.sprite.Sprite(pixel,batch=batch))
   
   # instruction functions
   funcmap = None # store op <-> method mappings here
@@ -426,16 +432,20 @@ class cpu (pyglet.window.Window):
 
   def draw(self):
     if self.should_draw:
-      # draw
-      self.clear()
+      # draw on batch 
       line_counter = 0
       i = 0
       while i < 2048:
         if self.display_buffer[i] == 1:
-          # draw a square pixel
-          self.pixel.blit((i%64)*10, 310 - ((i/64)*10))
+          self.sprites[i].x = (i%64)*10
+          self.sprites[i].y = 310 - ((i/64)*10)
+          self.sprites[i].batch = self.batch
+        else:
+          self.sprites[i].batch = None
         i += 1
-      self.flip()
+      self.clear() 
+      self.batch.draw()
+      self.flip() 
       self.should_draw = False
 
   def get_key(self):
@@ -469,7 +479,7 @@ class cpu (pyglet.window.Window):
     self.initialize()
     self.load_rom(sys.argv[1])
     while not self.has_exit:
-      self.dispatch_events()    
+      self.dispatch_events() 
       self.cycle()
       self.draw()
 
